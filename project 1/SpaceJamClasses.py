@@ -4,10 +4,9 @@ from panda3d.core import *
 from CollideObjectBase import *
 from typing import Callable
 from direct.gui.OnscreenImage import OnscreenImage
-from direct.interval.LerpInterval import LerpFunc
-from direct.particles.ParticleEffect import ParticleEffect
+
 from panda3d.core import CollisionTraverser
-import re                                                                                       #regex module import for string editing
+
 from direct.task import Task
 import DefensePaths as defensePaths
 
@@ -47,7 +46,7 @@ class Universe(InverseSphereCollideObject):
         self.modelNode.setTexture(tex, 1)
 
 class Spaceship(SphereCollideObject):
-    def __init__(self, loader: Loader, modelPath: str, parentNode: NodePath, nodeName: str, posVec: Vec3, scaleVec: float, task, render, accept: Callable[[str, Callable], None], traverser: CollisionTraverser):
+    def __init__(self, loader: Loader, modelPath: str, parentNode: NodePath, nodeName: str, posVec: Vec3, scaleVec: float, task, render, accept: Callable[[str, Callable], None], traverser, handler):
         self.accept = accept
         super(Spaceship, self).__init__(loader, modelPath, parentNode, nodeName, Vec3(0, 0, 0), 0.02)
         self.taskManager = task
@@ -68,11 +67,9 @@ class Spaceship(SphereCollideObject):
         self.cntExplode = 0
         self.explodeIntervals = {}
 
-        self.traverser = base.cTrav
+        self.traverser = traverser
 
-        self.handler = CollisionHandlerEvent()
-        self.handler.addInPattern('into')
-        self.accept('into', self.HandleInto)
+        self.handler = handler
 
     def CheckIntervals(self, task):
         for i in Missile.Intervals:
@@ -97,6 +94,20 @@ class Spaceship(SphereCollideObject):
 
     def ApplyThrust(self, task):
         rate = 5
+        trajectory = self.render.getRelativeVector(self.modelNode, Vec3.forward())
+        trajectory.normalize()
+
+        self.modelNode.setFluidPos(self.modelNode.getPos() + trajectory * rate)
+        return Task.cont
+    
+    def Boost(self, keyDown):
+        if keyDown:
+            self.taskManager.add(self.ApplyBoost, 'boost')
+        else:
+            self.taskManager.remove('boost')
+
+    def ApplyBoost(self, task):
+        rate = 20
         trajectory = self.render.getRelativeVector(self.modelNode, Vec3.forward())
         trajectory.normalize()
 
@@ -169,7 +180,8 @@ class Spaceship(SphereCollideObject):
         self.modelNode.setR(self.modelNode.getR() - rate)
         return Task.cont
     
-    def Fire(self):
+    def Fire(self, num):
+        self.num = num
         if self.missileBay:
             travRate = self.missileDistance
             aim = self.render.getRelativeVector(self.modelNode, Vec3.forward())                                                  #direction ship is facing
@@ -220,63 +232,18 @@ class Spaceship(SphereCollideObject):
         self.accept('q-up', self.RotateLeft, [0])
         self.accept('e', self.RotateRight, [1])
         self.accept('e-up', self.RotateRight, [0])
-        self.accept('f', self.Fire)
+        self.accept('f', self.Fire, [1])
+        self.accept('f-up', self.Fire, [0])
+        self.accept('shift', self.Boost, [1])
+        self.accept('shift-up', self.Boost, [0])
 
     def EnableHUD(self):
         self.Hud = OnscreenImage(image = "./Assets/Spaceships/Hud/Reticle3b.png", pos = Vec3(0, 0, 0), scale = 0.1)
         self.Hud.setTransparency(TransparencyAttrib.MAlpha)
         
-    def HandleInto(self, entry):
-        fromNode = entry.getFromNodePath().getName()
-        print("fromNode: " + fromNode)
-        intoNode = entry.getIntoNodePath().getName()
-        print("intoNode: " + intoNode)
+    
 
-        intoPosition = Vec3(entry.getSurfacePoint(self.render))
-
-        tempVar = fromNode.split('_')
-        shooter = tempVar[0]
-        tempVar = intoNode.split('_')
-        tempVar = intoNode.split('_')
-        victim = tempVar[0]
-
-        pattern = r'[0-9]'
-        strippedString = re.sub(pattern, '', victim)
-
-        if (strippedString == "Drone"):
-            print(shooter + ' id DONE.')
-            Missile.Intervals[shooter].finish()
-            print(victim, ' hit at ', intoPosition)
-            self.DroneDestroy(victim, intoPosition)
-        else:
-            Missile.Intervals[shooter].finish()
-
-    def DroneDestroy(self, hitID, hitPosition):
-        nodeID = self.render.find(hitID)
-        nodeID.detachNode()
-
-        self.explodeNode.setPos(hitPosition)                                            #start explosion
-        self.Explode(hitPosition)
-
-    def Explode(self, impactPoint):
-        self.cntExplode += 1
-        tag = 'particles-' + str(self.cntExplode)
-
-        self.explodeIntervals[tag] = LerpFunc(self.ExplodeLight, fromData = 0, toData = 1, duration = 4.0, extraArgs = [impactPoint])
-        self.explodeIntervals[tag].start()
-
-    def ExplodeLight(self, t, explosionPosition):
-        if t == 1.0 and self.explodeEffect:
-            self.explodeEffect.disable()
-        elif t == 0:
-            self.explodeEffect.start(self.explodeNode)
-
-    def SetParticles(self):
-        base.enableParticles()
-        self.explodeEffect = ParticleEffect()
-        self.explodeEffect.loadConfig("./Assets/Spaceships/Part-Fx/Part-Efx/basic_xpld_efx.ptf")
-        self.explodeEffect.setScale(20)
-        self.explodeNode = self.render.attachNewNode('ExplosionEffects')
+    
 
 class SpaceStation(CapsuleCollidableObject):
     def __init__(self, loader: Loader, modelPath: str, parentNode: NodePath, nodeName: str, posVec: Vec3, scaleVec: float):
