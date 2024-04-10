@@ -1,11 +1,13 @@
 from direct.showbase.ShowBase import ShowBase
-from panda3d.core import CollisionTraverser, CollisionHandlerPusher, CollisionHandlerEvent, Vec3
+from panda3d.core import *
 import DefensePaths as defensePaths
 import SpaceJamClasses as spaceJamClasses
 from CollideObjectBase import PlacedObject
 import re                                                                                       #regex module import for string editing
 from direct.interval.LerpInterval import LerpFunc
 from direct.particles.ParticleEffect import ParticleEffect
+from direct.task import Task
+import random
 
 class SpaceJam(ShowBase):
     def __init__(self):
@@ -63,12 +65,12 @@ class SpaceJam(ShowBase):
         self.Ship = spaceJamClasses.Spaceship(self.loader,"./Assets/Spaceships/Dumbledore/Dumbledore.egg", self.render, 'Ship', (0, 0, 0), 10, self.taskMgr, self.render, self.accept, self.cTrav, self.handler)
 
             #Planets
-        self.Planet1 = spaceJamClasses.Planet(self.loader, "./Assets/Planets/redPlanet.x", self.render, 'Planet1', "./Assets/Planets/Planet1.jpg", (150, 5000, 67), 350)
-        self.Planet2 = spaceJamClasses.Planet(self.loader, "./Assets/Planets/redPlanet.x", self.render, 'Planet2', "./Assets/Planets/Planet2.jpg", (5000, 1000, 183), 600)
-        self.Planet3 = spaceJamClasses.Planet(self.loader, "./Assets/Planets/redPlanet.x", self.render, 'Planet3', "./Assets/Planets/Planet3.png", (500, 9060, 23), 200)
-        self.Planet4 = spaceJamClasses.Planet(self.loader, "./Assets/Planets/redPlanet.x", self.render, 'Planet4', "./Assets/Planets/Planet4.png", (1000, 1833, 1000), 350)
-        self.Planet5 = spaceJamClasses.Planet(self.loader, "./Assets/Planets/redPlanet.x", self.render, 'Planet5', "./Assets/Planets/Planet5.png", (183, 500, 1500), 300)
-        self.Planet6 = spaceJamClasses.Planet(self.loader, "./Assets/Planets/redPlanet.x", self.render, 'Planet6', "./Assets/Planets/Planet6.png", (2000, 2000, 2300), 400)
+        self.Planet1 = spaceJamClasses.Planet(self.loader, "./Assets/Planets/redPlanet.x", self.render, 'Planet', "./Assets/Planets/Planet1.jpg", (150, 5000, 67), 350)
+        self.Planet2 = spaceJamClasses.Planet(self.loader, "./Assets/Planets/redPlanet.x", self.render, 'Planet', "./Assets/Planets/Planet2.jpg", (5000, 1000, 183), 600)
+        self.Planet3 = spaceJamClasses.Planet(self.loader, "./Assets/Planets/redPlanet.x", self.render, 'Planet', "./Assets/Planets/Planet3.png", (500, 9060, 23), 200)
+        self.Planet4 = spaceJamClasses.Planet(self.loader, "./Assets/Planets/redPlanet.x", self.render, 'Planet', "./Assets/Planets/Planet4.png", (1000, 1833, 1000), 350)
+        self.Planet5 = spaceJamClasses.Planet(self.loader, "./Assets/Planets/redPlanet.x", self.render, 'Planet', "./Assets/Planets/Planet5.png", (183, 500, 1500), 300)
+        self.Planet6 = spaceJamClasses.Planet(self.loader, "./Assets/Planets/redPlanet.x", self.render, 'Planet', "./Assets/Planets/Planet6.png", (2000, 2000, 2300), 400)
 
             #Space Station
         self.Station = spaceJamClasses.SpaceStation(self.loader, "./Assets/SpaceStation/SpaceStation1B/spaceStation.egg", self.render, 'Station', (-1000, -1000, -1000), 40)
@@ -77,6 +79,9 @@ class SpaceJam(ShowBase):
                                                  "./Assets/Drones/DroneDefender/octotoad1_auv.png", self.Planet5, 900, "MLB", self.Ship)
         self.Sentinal2 = spaceJamClasses.Orbiter(self.loader, self.taskMgr, "./Assets/Drones/DroneDefender/DroneDefender.obj", self.render, "Drone", 6.0,
                                                  "./Assets/Drones/DroneDefender/octotoad1_auv.png", self.Planet2, 500, "Cloud", self.Ship)
+        
+        self.Wander1 = spaceJamClasses.Wanderer(self.loader, "./Assets/Drones/DroneDefender/DroneDefender.obj", self.render, "Drone", 6.0, "./Assets/Drones/DroneDefender/octotoad1_auv.png", self.Ship)
+        self.Wander2 = spaceJamClasses.Wanderer(self.loader, "./Assets/Drones/DroneDefender/DroneDefender.obj", self.render, "Drone", 20.0, "./Assets/Drones/DroneDefender/octotoad1_auv.png", self.Ship)
         
     def HandleInto(self, entry):
         fromNode = entry.getFromNodePath().getName()
@@ -100,6 +105,12 @@ class SpaceJam(ShowBase):
             spaceJamClasses.Missile.Intervals[shooter].finish()
             print(victim, ' hit at ', intoPosition)
             self.DroneDestroy(victim, intoPosition)
+        elif (strippedString == "Planet"):
+            spaceJamClasses.Missile.Intervals[shooter].finish()
+            self.PlanetDestroy(victim)
+        elif (strippedString == "Station"):
+            spaceJamClasses.Missile.Intervals[shooter].finish()
+            self.SpaceStationDestroy(victim)
         else:
             spaceJamClasses.Missile.Intervals[shooter].finish()
 
@@ -129,6 +140,40 @@ class SpaceJam(ShowBase):
             self.explodeEffect.disable()
         elif t == 0:
             self.explodeEffect.start(self.explodeNode)
+
+    def PlanetDestroy(self, victim: NodePath):
+        nodeID = self.render.find(victim)
+
+        self.taskMgr.add(self.PlanetShrink, name = "PlanetShrink", extraArgs = [nodeID], appendTask = True)
+
+    def PlanetShrink(self, nodeID: NodePath, task):
+        if task.time < 2.0:
+            if nodeID.getBounds().getRadius() > 0:
+                scaleSubtraction = 10
+                nodeID.setScale(nodeID.getScale() - scaleSubtraction)
+                temp = 30 * random.random()
+                nodeID.setH(nodeID.getH() - temp)
+                return task.cont
+        else:
+            nodeID.detachNode()
+            return task.done
+        
+    def SpaceStationDestroy(self, victim: NodePath):
+        nodeID = self.render.find(victim)
+
+        self.taskMgr.add(self.SpaceStationShrink, name = "SpaceStationShrink", extraArgs = [nodeID], appendTask = True)
+
+    def SpaceStationShrink(self, nodeID: NodePath, task):
+        if task.time < 2.0:
+            if nodeID.getBounds().getRadius() > 0:
+                scaleSubtraction = 2
+                nodeID.setScale(nodeID.getScale() - scaleSubtraction)
+                temp = 30 * random.random()
+                nodeID.setH(nodeID.getH() + temp)
+                return task.cont
+        else:
+            nodeID.detachNode()
+            return task.done
 
 
         
